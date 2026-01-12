@@ -1,15 +1,12 @@
 import streamlit as st
 import nltk
-from nltk.tokenize import word_tokenize
 import io
 import requests
 import json
-import time
 import re
 import PyPDF2
 
-159
------------- PAGE CONFIG ----------------
+# ---------------- PAGE CONFIG ----------------
 st.set_page_config(
     page_title="HR-Tek Systems ATS Checker",
     page_icon="📄",
@@ -108,10 +105,7 @@ def download_file_from_gdrive(file_id):
         url = f"https://drive.google.com/uc?export=download&id={file_id}"
         response = requests.get(url, stream=True)
 
-        if response.status_code != 200:
-            return None
-
-        if response.content.startswith(b"%PDF"):
+        if response.status_code == 200 and response.content.startswith(b"%PDF"):
             return response.content
         return None
 
@@ -137,7 +131,6 @@ def extract_text_from_gdrive_pdf(file_content):
 
 # ---------------- PDF UPLOAD ----------------
 def extract_text_from_pdf(uploaded_file):
-    """Extracts text from an uploaded PDF file."""
     try:
         reader = PyPDF2.PdfReader(uploaded_file)
         text = ""
@@ -169,7 +162,7 @@ You are an expert ATS system.
 
 Analyze the resume against the job description.
 
-Return ONLY valid JSON in this exact format:
+Return ONLY valid JSON in this format:
 
 {{
   "compatibilityScore": 0-100,
@@ -197,45 +190,30 @@ Job Description:
         }
     }
 
-    headers = {
-        "Content-Type": "application/json"
-    }
+    headers = {"Content-Type": "application/json"}
 
     try:
-        response = requests.post(
-            api_url,
-            headers=headers,
-            json=payload,
-            timeout=120
-        )
+        response = requests.post(api_url, headers=headers, json=payload, timeout=120)
         response.raise_for_status()
 
         result = response.json()
-
         raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
 
-        # Clean JSON if Gemini wraps it in ```json
-        cleaned_text = raw_text.strip()
-        cleaned_text = cleaned_text.replace("```json", "").replace("```", "").strip()
-
+        cleaned_text = raw_text.replace("```json", "").replace("```", "").strip()
         return json.loads(cleaned_text)
 
-    except requests.exceptions.HTTPError as e:
-        st.error("Gemini API request failed.")
-        st.code(response.text)
-        return None
-
-    except json.JSONDecodeError:
-        st.error("Gemini did not return valid JSON.")
-        st.code(raw_text)
-        return None
-
     except Exception as e:
-        st.error(f"Unexpected error: {e}")
+        st.error("Gemini analysis failed.")
+        st.code(response.text if "response" in locals() else str(e))
         return None
 
+# ---------------- UI ----------------
+st.markdown('<h1 class="main-title">ATS Resume Compatibility Checker</h1>', unsafe_allow_html=True)
 
-("Resume")
+col1, col2 = st.columns(2)
+
+with col1:
+    st.header("Resume")
     method = st.radio("Resume Input Method", ["Upload File", "Google Drive Link"])
     resume_text = None
 
@@ -243,7 +221,6 @@ Job Description:
         file = st.file_uploader("Upload PDF", type=["pdf"])
         if file:
             resume_text = extract_text_from_pdf(file)
-
     else:
         link = st.text_input("Google Drive PDF Link")
         if link and "drive.google.com" in link:
@@ -254,7 +231,10 @@ Job Description:
                     resume_text = extract_text_from_gdrive_pdf(content)
 
     st.header("Intern Role")
-    selected_jd = st.selectbox("Select Job Description", PREDEFINED_JOB_DESCRIPTIONS.keys())
+    selected_jd = st.selectbox(
+        "Select Job Description",
+        list(PREDEFINED_JOB_DESCRIPTIONS.keys())
+    )
 
 with col2:
     if selected_jd != "Custom Job Description":
@@ -263,8 +243,7 @@ with col2:
     else:
         job_description = st.text_area("Paste Job Description", height=300)
 
-159
------------- ANALYSIS ----------------
+# ---------------- ANALYSIS ----------------
 if st.button("Analyze Compatibility", type="primary", use_container_width=True):
     if not resume_text:
         st.warning("Please upload a valid resume.")
@@ -275,7 +254,10 @@ if st.button("Analyze Compatibility", type="primary", use_container_width=True):
             result = get_gemini_analysis(resume_text, job_description)
 
             if result:
-                st.metric("Compatibility Score", f"{result['compatibilityScore']}%")
+                st.metric(
+                    "Compatibility Score",
+                    f"{result['compatibilityScore']}%"
+                )
                 st.subheader("✅ Strengths")
                 st.markdown(result["strengths"])
                 st.subheader("⚠️ Areas for Improvement")
