@@ -233,9 +233,7 @@ def get_gemini_analysis(resume_text, jd_text):
     Returns a structured JSON response with score, strengths, and improvements.
     """
     apiKey = st.secrets["GEMINI_API_KEY"]
-    apiUrl = f"https://generativelanguage.googleapis.com/v1beta/models/129
-    :generateContent?key={apiKey}"
-
+    apiUrl = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}"
     system_prompt = """
     You are an expert Applicant Tracking System (ATS) and a professional career coach. Your task is to analyze a resume against a job description.
     Provide a compatibility score as a percentage (as a number, not a string), a concise bulleted list of the candidate's strengths, and a concise bulleted list of actionable areas for improvement.
