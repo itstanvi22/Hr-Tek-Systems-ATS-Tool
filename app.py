@@ -213,7 +213,7 @@ def extract_text_from_gdrive_pdf(file_content):
         return None
 def extract_text_from_pdf(uploaded_file):
    """Extracts text from an uploaded PDF file."""
-    try:
+try:
         reader = PyPDF2.PdfReader(uploaded_file)
         text = "".join(page.extract_text() for page in reader.pages if page.extract_text())
         return text.strip()
