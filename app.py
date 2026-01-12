@@ -8,7 +8,8 @@ import time
 import re
 import PyPDF2
 
-# ---------------- PAGE CONFIG ----------------
+159
+------------ PAGE CONFIG ----------------
 st.set_page_config(
     page_title="HR-Tek Systems ATS Checker",
     page_icon="📄",
@@ -158,55 +159,83 @@ def extract_text_from_pdf(uploaded_file):
 # ---------------- GEMINI API ----------------
 def get_gemini_analysis(resume_text, jd_text):
     api_key = st.secrets["GEMINI_API_KEY"]
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    api_url = (
+        "https://generativelanguage.googleapis.com/v1beta/"
+        f"models/gemini-1.5-flash:generateContent?key={api_key}"
+    )
 
-    payload = {
-        "contents": [{
-            "parts": [{
-                "text": f"""
-Analyze this resume against the job description.
+    prompt = f"""
+You are an expert ATS system.
+
+Analyze the resume against the job description.
+
+Return ONLY valid JSON in this exact format:
+
+{{
+  "compatibilityScore": 0-100,
+  "strengths": "- bullet points",
+  "areasForImprovement": "- bullet points"
+}}
 
 Resume:
 {resume_text}
 
 Job Description:
 {jd_text}
-
-Return JSON:
-{{
-  "compatibilityScore": number,
-  "strengths": "bulleted text",
-  "areasForImprovement": "bulleted text"
-}}
 """
-            }]
-        }],
+
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": prompt}]
+            }
+        ],
         "generationConfig": {
             "temperature": 0.3,
-            "responseMimeType": "application/json"
+            "maxOutputTokens": 1024
         }
     }
 
+    headers = {
+        "Content-Type": "application/json"
+    }
+
     try:
-        response = requests.post(api_url, json=payload, timeout=120)
+        response = requests.post(
+            api_url,
+            headers=headers,
+            json=payload,
+            timeout=120
+        )
         response.raise_for_status()
+
         result = response.json()
 
-        json_text = result["candidates"][0]["content"]["parts"][0]["text"]
-        return json.loads(json_text)
+        raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
 
-    except Exception as e:
-        st.error("Gemini analysis failed.")
-        st.code(result if "result" in locals() else str(e))
+        # Clean JSON if Gemini wraps it in ```json
+        cleaned_text = raw_text.strip()
+        cleaned_text = cleaned_text.replace("```json", "").replace("```", "").strip()
+
+        return json.loads(cleaned_text)
+
+    except requests.exceptions.HTTPError as e:
+        st.error("Gemini API request failed.")
+        st.code(response.text)
         return None
 
-# ---------------- UI ----------------
-st.markdown('<h1 class="main-title">ATS Resume Compatibility Checker</h1>', unsafe_allow_html=True)
+    except json.JSONDecodeError:
+        st.error("Gemini did not return valid JSON.")
+        st.code(raw_text)
+        return None
 
-col1, col2 = st.columns(2)
+    except Exception as e:
+        st.error(f"Unexpected error: {e}")
+        return None
 
-with col1:
-    st.header("Resume")
+
+("Resume")
     method = st.radio("Resume Input Method", ["Upload File", "Google Drive Link"])
     resume_text = None
 
@@ -234,7 +263,8 @@ with col2:
     else:
         job_description = st.text_area("Paste Job Description", height=300)
 
-# ---------------- ANALYSIS ----------------
+159
+------------ ANALYSIS ----------------
 if st.button("Analyze Compatibility", type="primary", use_container_width=True):
     if not resume_text:
         st.warning("Please upload a valid resume.")
