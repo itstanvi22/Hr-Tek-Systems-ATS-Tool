@@ -1,5 +1,4 @@
-236import streamlit as st
-import PyPDF2
+import streamlit as st
 import nltk
 from nltk.tokenize import word_tokenize
 import io
