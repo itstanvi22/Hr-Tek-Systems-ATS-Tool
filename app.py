@@ -211,9 +211,8 @@ def extract_text_from_gdrive_pdf(file_content):
     except Exception as e:
         st.error(f"Error reading PDF from Google Drive: {e}")
         return None
-flash;generateContent
 def extract_text_from_pdf(uploaded_file):
-   flash:generateContent """Extracts text from an uploaded PDF file."""
+   """Extracts text from an uploaded PDF file."""
     try:
         reader = PyPDF2.PdfReader(uploaded_file)
         text = "".join(page.extract_text() for page in reader.pages if page.extract_text())
