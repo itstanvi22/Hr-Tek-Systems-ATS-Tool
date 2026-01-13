@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 import nltk
 import io
@@ -151,95 +152,70 @@ def extract_text_from_pdf(uploaded_file):
 
 # ---------------- GEMINI API ----------------
 def get_gemini_analysis(resume_text, jd_text):
-    api_key = st.secrets["GEMINI_API_KEY"]
-    api_url = (
-        "https://generativelanguage.googleapis.com/v1beta/"
-        f"models/gemini-1.5-flash:generateContent?key={api_key}"
-    )
+    try:
+        api_key = st.secrets.get("GEMINI_API_KEY")
+        if not api_key:
+            st.error("❌ GEMINI_API_KEY not found")
+            return None
 
-    prompt = f"""
-You are an expert ATS system.
+        # Standard models
+        MODELS = [
+            ("v1beta", "gemini-1.5-flash"),
+            ("v1beta", "gemini-1.5-pro")
+        ]
 
-Analyze the resume against the job description.
+        # Explicitly ask for JSON in the prompt to ensure compatibility
+        prompt = f"""
+        Return ONLY a JSON object. Do not include any introductory text.
+        Schema: {{
+            "compatibilityScore": number,
+            "strengths": "string (markdown bullets)",
+            "areasForImprovement": "string (markdown bullets)"
+        }}
+        
+        Resume: {resume_text[:8000]}
+        JD: {jd_text[:4000]}
+        """
 
-Return ONLY valid JSON in this format:
-
-{{
-  "compatibilityScore": 0-100,
-  "strengths": "- bullet points",
-  "areasForImprovement": "- bullet points"
-}}
-
-Resume:
-{resume_text}
-
-Job Description:
-{jd_text}
-"""
-
-    payload = {
-        "contents": [
-            {
-                "role": "user",
-                "parts": [{"text": prompt}]
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.2,
+                "maxOutputTokens": 2048
             }
-        ],
-        "generationConfig": {
-            "temperature": 0.3,
-            "maxOutputTokens": 1024
         }
-    }
 
-    headers = {"Content-Type": "application/json"}
+        last_error = None
+        for version, model in MODELS:
+            api_url = f"https://generativelanguage.googleapis.com/{version}/models/{model}:generateContent?key={api_key}"
+            
+            for attempt in range(2): # Try twice for rate limits
+                try:
+                    response = requests.post(api_url, json=payload, timeout=30)
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
+                        
+                        # ✅ HELPER: Clean potential Markdown wrapping
+                        clean_json = raw_text.replace("```json", "").replace("```", "").strip()
+                        return json.loads(clean_json)
+                    
+                    elif response.status_code == 429:
+                        time.sleep(5)
+                        continue
+                    else:
+                        last_error = f"{model} → {response.status_code}: {response.text}"
+                        break 
+                except Exception as e:
+                    last_error = str(e)
+                    break
 
-    max_retries = 2
-    delay = 2  # seconds
-
-    for attempt in range(max_retries + 1):
-        try:
-            response = requests.post(
-                api_url,
-                headers=headers,
-                json=payload,
-                timeout=60
-            )
-
-            # 🔴 RATE LIMIT HANDLING
-            if response.status_code == 429:
-                if attempt < max_retries:
-                    time.sleep(delay)
-                    delay *= 2
-                    continue
-                else:
-                    st.warning(
-                        "🚦 High traffic right now. Please wait 1–2 minutes and try again."
-                    )
-                    return None
-
-            response.raise_for_status()
-
-            result = response.json()
-            raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
-
-            cleaned_text = (
-                raw_text.replace("```json", "")
-                .replace("```", "")
-                .strip()
-            )
-
-            return json.loads(cleaned_text)
-
-        except json.JSONDecodeError:
-            st.error("⚠️ AI response was malformed. Please retry once.")
-            return None
-
-        except requests.exceptions.RequestException:
-            st.warning(
-                "⚠️ Temporary AI service issue. Please retry in a moment."
-            )
-            return None
-
-    return None
+        st.error(f"❌ All attempts failed. Details: {last_error}")
+        return None
+    except Exception as e:
+        st.error(f"❌ Critical Error: {str(e)}")
+        return None
 
 # ---------------- UI ----------------
 st.markdown('<h1 class="main-title">ATS Resume Compatibility Checker</h1>', unsafe_allow_html=True)
